@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+tmp/
+.server.pid
+.codebase-memory/
+data/rag.db
+.env
+.venv/
