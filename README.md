@@ -1,173 +1,108 @@
-# Yerel RAG Asistanı
+# Foundry Local RAG Assistant
 
-Bu proje, Microsoft Foundry Local ile çalışan basit bir yerel RAG uygulamasıdır.
-Amaç, kendi bilgisayarımda çalışan bir yapay zeka asistanının yerel dokümanlardan
-bilgi bulup cevap vermesini göstermekti.
+A retrieval-augmented generation (RAG) assistant that runs entirely on a local machine with
+[Microsoft Foundry Local](https://github.com/microsoft/Foundry-Local). It finds the most relevant
+parts of local documents for a question and answers with a local model, citing the sources it used.
 
-Uygulama buluttaki bir modele istek atmıyor. İlk model indirmesi dışında cevap
-üretme süreci yerelde çalışıyor.
+No request is sent to a cloud model. Apart from the first model download, answering runs locally.
 
-## Kısaca Ne Yapıyor?
+Built during the Microsoft Türkiye AI Innovators Program (summer 2026) to learn Foundry Local and RAG.
 
-Kullanıcı bir soru soruyor. Uygulama önce `data/docs` klasöründeki dokümanlarda
-alakalı parçaları arıyor. Sonra bulduğu parçaları Foundry Local ile çalışan yerel
-modele bağlam olarak veriyor. Model de bu bağlama göre cevap üretiyor.
+## What it does
 
-Eğer dokümanlarda yeterli bilgi yoksa cevap uydurmak yerine şunu söylüyor:
+1. Markdown documents in `data/docs/` are split into chunks (up to 120 words, 25-word overlap).
+2. Each chunk is embedded with `qwen3-embedding-0.6b` and stored in a local SQLite database (`data/rag.db`).
+3. A question is embedded the same way. Chunks are ranked by cosine similarity plus a small keyword-overlap bonus, and the top 3 are kept.
+4. The chunks are passed as context to `qwen2.5-0.5b` running on Foundry Local, which answers with source citations.
+5. If the documents do not contain the answer, the assistant does not guess. It replies
+   `Yerel dokümanlarda bu bilgi yok.` ("This information is not in the local documents.").
 
-```text
-Yerel dokümanlarda bu bilgi yok.
-```
-
-## Neden Bu Projeyi Yaptım?
-
-Microsoft Foundry Local ve RAG mantığını öğrenmek için yaptım. Proje özellikle şu
-konuları göstermek için hazırlandı:
-
-- Foundry Local ile yerel model çalıştırma
-- Dokümanları küçük parçalara ayırma
-- Embedding üretme
-- SQLite içinde yerel bilgi tabanı tutma
-- Soruya en alakalı doküman parçalarını bulma
-- Bulunan bağlamla cevap üretme
-- Bilgi yoksa güvenli şekilde cevap vermeme
-
-## Nasıl Çalışıyor?
-
-Akış basit:
+Small local models can produce weak Turkish answers, so when a low-quality answer is detected the app
+falls back to a short extractive answer taken from the most relevant source.
 
 ```text
-Soru
-  -> embedding
-  -> SQLite içinde arama
-  -> en alakalı doküman parçaları
-  -> Foundry Local modeli
-  -> kaynaklı cevap
+question -> embedding -> SQLite search -> top chunks -> Foundry Local model -> answer with sources
 ```
 
-Ana parçalar:
+## Project structure
 
 ```text
-data/docs/          Yerel dokümanlar
-data/rag.db         SQLite bilgi tabanı
-src/documents.py    Doküman okuma ve parçalama
-src/embeddings.py   Embedding üretimi
-src/retrieval.py    Benzerlik araması
-src/rag.py          Cevap üretme akışı
-scripts/ingest.py   Dokümanları veritabanına işler
-scripts/ask.py      Tek soru sormak için
-scripts/chat.py     Terminalde sohbet için
-scripts/web.py      Web arayüzü için
+data/docs/          Local documents
+data/rag.db         SQLite knowledge base (created by ingest.py)
+src/documents.py    Document loading and chunking
+src/embeddings.py   Embedding generation
+src/retrieval.py    Similarity search
+src/rag.py          Answer generation pipeline
+scripts/ingest.py   Builds the knowledge base from the documents
+scripts/ask.py      Ask a single question
+scripts/chat.py     Chat in the terminal
+scripts/web.py      Web interface
+tests/              Unit tests for chunking and retrieval
 ```
 
-## Kurulum
+## Setup
 
-Önce bağımlılıkları kur:
+Install the dependencies:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-Foundry Local native paketleri kurulu değilse şunu çalıştır:
+If the Foundry Local native packages are not installed yet, run:
 
 ```powershell
 foundry-local-install
 ```
 
-Not: Bu komut PATH içinde görünmüyorsa Python `Scripts` klasöründeki
-`foundry-local-install.exe` dosyasını çalıştırmak gerekebilir.
+If this command is not on your PATH, run `foundry-local-install.exe` from your Python `Scripts` folder.
 
-## Dokümanları Hazırlama
+## Building the knowledge base
 
-Dokümanlar `data/docs` klasöründe duruyor. Yeni doküman ekledikten veya mevcut
-dokümanları değiştirdikten sonra bilgi tabanını yeniden oluşturmak gerekiyor:
+After adding or changing documents in `data/docs/`, rebuild the knowledge base:
 
 ```powershell
 python scripts/ingest.py
 ```
 
-Bu komut dokümanları okur, parçalara böler, embedding üretir ve sonucu
-`data/rag.db` içine kaydeder.
+This reads the documents, splits them into chunks, generates embeddings and saves them to `data/rag.db`.
 
-## Çalıştırma
+## Usage
 
-Tek soru sormak için:
+Ask a single question:
 
 ```powershell
 python scripts/ask.py "RAG nedir?"
 ```
 
-Terminalde sohbet etmek için:
+Chat in the terminal:
 
 ```powershell
 python scripts/chat.py
 ```
 
-Web arayüzünü açmak için:
+Start the web interface and open `http://127.0.0.1:8000`:
 
 ```powershell
 python scripts/web.py
 ```
 
-Sonra tarayıcıdan şu adrese gir:
+The sample documents and the interface are in Turkish. Example questions are in `docs/demo_questions.md`.
+A question that is not covered by the documents, such as `"Fransa'nın başkenti nedir?"`, should return the
+"not in the local documents" reply.
 
-```text
-http://127.0.0.1:8000
-```
-
-## Deneme Soruları
-
-Şunları deneyebilirsin:
-
-```powershell
-python scripts/ask.py "Foundry Local çevrimdışı yapay zekaya nasıl yardımcı olur?"
-python scripts/ask.py "SQLite bu projede neden yararlıdır?"
-python scripts/ask.py "Dokümanları değiştirdikten sonra ne yapmalıyım?"
-```
-
-Bir de bilerek dokümanlarda olmayan bir soru sor:
-
-```powershell
-python scripts/ask.py "Fransa'nın başkenti nedir?"
-```
-
-Beklenen cevap:
-
-```text
-Yerel dokümanlarda bu bilgi yok.
-```
-
-## Test
-
-Unit testleri çalıştırmak için:
+## Tests
 
 ```powershell
 python -m unittest discover -s tests
 ```
 
-Demo sorularını topluca denemek için:
+Run the demo questions in one go:
 
 ```powershell
 python scripts/evaluate.py
 ```
 
-## Notlar
+## Notes
 
-Bu proje öğrenme ve demo amacıyla yapıldı. SQLite üzerindeki arama küçük doküman
-setleri için yeterli. Çok büyük doküman koleksiyonlarında daha gelişmiş bir
-vektör veritabanı daha doğru olur.
-
-Küçük yerel modeller Türkçe cevaplarda bazen zayıf kalabiliyor. Bu yüzden
-uygulamada düşük kaliteli cevap algılanırsa en alakalı kaynak metinden kısa bir
-cevap üreten ek koruma var.
-
-## Durum
-
-Şu an proje çalışır durumda:
-
-- Dokümanlar işleniyor.
-- SQLite bilgi tabanı oluşuyor.
-- Retrieval çalışıyor.
-- Foundry Local modeliyle cevap üretiliyor.
-- Web arayüzü Türkçe çalışıyor.
-- Bilgi yoksa cevap uydurmuyor.
+This is a learning and demo project. Brute-force search over SQLite is enough for a small document set;
+a larger collection would need a proper vector database.
